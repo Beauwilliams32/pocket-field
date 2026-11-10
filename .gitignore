@@ -1,0 +1,19 @@
+# Game ROMs and saves are user-owned private data and must never be committed.
+*.gba
+*.GBA
+*.gb
+*.GB
+*.gbc
+*.GBC
+*.sav
+*.SAV
+*.state
+*.previous.state
+Games/
+Saves/
+
+# Build and local files
+dist/
+.DS_Store
+*.log
+.env

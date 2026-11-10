@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" data-type="software"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f5f5f1"><meta name="description" content="Your games, ready to go. A portable Game Boy library."><meta name="page-type" content="software"><meta name="site-kind" content="gaming"><title>Pocket Field</title><link rel="icon" href="icon.svg"><link rel="stylesheet" href="player.css"></head>
+<body><a class="skip" href="#library">Skip to games</a>
+<header><a class="brand" href="/" aria-label="Pocket Field home"><span class="brand-icon" aria-hidden="true"><i></i><i></i></span><span>POCKET<br>FIELD</span></a><nav aria-label="Main"><button class="nav active" id="libraryTab">My games</button><button class="nav" id="addTab">Add games <span aria-hidden="true">+</span></button></nav><button class="round-button" id="phoneButton" aria-label="Play on your phone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg></button></header>
+<main id="library"><div class="section-label"><span>YOUR POCKET COLLECTION</span><span id="gameCount">Connecting to drive…</span></div>
+<section class="featured" id="featured" data-theme="firered" aria-labelledby="gameTitle"><div class="hero-copy"><div class="platform" id="platform">GAME BOY ADVANCE</div><p class="series" id="series">Handheld</p><h1 id="gameTitle">Your next<br>adventure.</h1><p class="description" id="description">Choose a game from your collection.</p><div class="hero-actions"><button class="primary" id="playButton" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg><span>Play game</span></button><span class="save-note" id="saveNote">Ready when you are</span></div></div><div class="hero-art"><div class="orbit" aria-hidden="true"></div><img id="heroImage" src="assets/firered.svg" alt="Red handheld game cartridge" width="475" height="475"><span class="edition" id="edition">FIRE / 01</span></div></section>
+<div class="library-heading"><h2>Pick your adventure</h2><span class="keyboard-hint">← → to choose <kbd>Enter</kbd> to play</span></div><div class="game-grid" id="games" aria-label="Game collection"></div>
+<footer><div class="drive-info"><span class="status-dot"></span><span id="driveStatus">Reading your drive…</span><span class="meter"><i id="driveMeter"></i></span></div><button class="text-button" id="helpButton">Controls & help</button></footer><p class="quiet-credit">An open-source personal game library. No games are included. Not affiliated with Nintendo.</p></main>
+<section id="playScreen" hidden aria-label="Game player">
+  <div class="player-toolbar">
+    <button id="backButton" class="secondary">← My games</button>
+    <div class="player-title"><span>NOW PLAYING</span><strong id="playingTitle"></strong></div>
+    <button id="saveButton" class="primary compact" disabled>Save to drive</button>
+  </div>
+  <div class="console" aria-label="Pocket Field controller">
+    <div class="console-topline"><span>POCKET FIELD</span><span class="console-model">PF–01 · ADVANCE</span></div>
+    <div class="shoulder-row" aria-label="Shoulder buttons">
+      <button type="button" class="control shoulder" data-input="10" data-key-label="A" aria-label="L shoulder button"><span>L</span><small>A key</small></button>
+      <div class="speaker-slots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      <button type="button" class="control shoulder" data-input="11" data-key-label="S" aria-label="R shoulder button"><span>R</span><small>S key</small></button>
+    </div>
+    <div class="screen-bezel">
+      <div class="screen-meta"><span><i class="power-light"></i> POWER</span><span>DOT MATRIX WITH STEREO SOUND</span></div>
+      <div id="game" aria-label="Game display"></div>
+      <div class="screen-caption"><span id="playStatus" role="status">Starting game…</span><span id="controllerStatus">CONTROLLER READY</span></div>
+    </div>
+    <div class="controller-deck">
+      <div class="dpad-wrap" aria-label="Directional pad">
+        <span class="control-label">D–PAD</span>
+        <div class="dpad">
+          <button type="button" class="control dpad-up" data-input="4" data-key-label="↑" aria-label="Up"><span>▲</span></button>
+          <button type="button" class="control dpad-left" data-input="6" data-key-label="←" aria-label="Left"><span>◀</span></button>
+          <span class="dpad-center" aria-hidden="true"><i></i></span>
+          <button type="button" class="control dpad-right" data-input="7" data-key-label="→" aria-label="Right"><span>▶</span></button>
+          <button type="button" class="control dpad-down" data-input="5" data-key-label="↓" aria-label="Down"><span>▼</span></button>
+        </div>
+      </div>
+      <div class="system-controls" aria-label="System buttons">
+        <button type="button" class="control pill-control" data-input="2" data-key-label="Shift" aria-label="Select"><i></i><span>SELECT</span></button>
+        <button type="button" class="control pill-control" data-input="3" data-key-label="Enter" aria-label="Start"><i></i><span>START</span></button>
+      </div>
+      <div class="action-wrap" aria-label="Action buttons">
+        <span class="control-label">ACTION</span>
+        <div class="action-buttons">
+          <button type="button" class="control action b-button" data-input="0" data-key-label="Z" aria-label="B button"><strong>B</strong><small>Z key</small></button>
+          <button type="button" class="control action a-button" data-input="8" data-key-label="X" aria-label="A button"><strong>A</strong><small>X key</small></button>
+        </div>
+      </div>
+    </div>
+    <div class="console-footer"><span>PRESS AND HOLD BUTTONS TO PLAY</span><span>KEYBOARD + GAMEPAD SUPPORTED</span></div>
+  </div>
+  <div class="play-footer"><span>Arrow keys move · X confirms · Z goes back</span><button type="button" class="text-button" id="playerHelpButton">Controller guide</button></div>
+</section>
+<dialog id="addDialog"><div class="dialog-head"><h2>Make room for more fun.</h2><button class="close" data-close aria-label="Close">×</button></div><p>Add Game Boy, Game Boy Color, or Game Boy Advance games to your drive.</p><div id="dropZone" class="drop-zone"><svg viewBox="0 0 48 48" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="10" y="5" width="28" height="38" rx="4"/><path d="M17 5v13h14V5M17 32h14M24 25v14"/></svg><h3>Drop a game here</h3><p>.gba, .gb, or .gbc · up to 32 MB each</p><button id="importButton" class="primary">Choose game files</button><input id="romFile" type="file" accept=".gba,.gb,.gbc" multiple hidden></div><p id="importStatus" role="status" aria-live="polite"></p><div class="discover"><div><span class="platform">FIND YOUR NEXT FAVORITE</span><h3>Small games. Big ideas.</h3><p>Explore independent homebrew games, download a ROM from its creator, then add it here. Unzip downloads first.</p></div><a href="https://itch.io/games/downloadable/tag-gameboy-rom/tag-homebrew" rel="noopener" class="secondary">Browse homebrew ↗</a></div></dialog>
+<dialog id="phoneDialog"><div class="dialog-head"><h2>Take the next turn.</h2><button class="close" data-close aria-label="Close">×</button></div><p>Connect your phone to the same Wi-Fi as this Mac, then scan this code.</p><img id="qr" src="/api/qr" width="200" height="200" alt="QR code to open Pocket Field on your phone"><a id="phoneLink"></a><p class="note">Keep this app open and the drive plugged into your Mac. Touch controls appear on your phone. Both devices save to this drive; play on one device at a time.</p></dialog>
+<dialog id="helpDialog"><div class="dialog-head"><h2>A little help. Then, adventure.</h2><button class="close" data-close aria-label="Close">×</button></div><div class="controls"><div><kbd>↑ ↓ ← →</kbd><span>Move</span></div><div><kbd>X</kbd><span>A / Confirm</span></div><div><kbd>Z</kbd><span>B / Back</span></div><div><kbd>Enter</kbd><span>Start</span></div><div><kbd>Shift</kbd><span>Select</span></div><div><kbd>A / S</kbd><span>L / R</span></div></div><p>Sessions save to the drive every 20 seconds. Use <b>Save to drive</b> before quitting, then eject the drive in Finder. Returning to My games also saves your session.</p><p>Use the emulator menu for controller mapping, sound, and full screen. Phone controls appear automatically.</p><p class="note">Player: EmulatorJS 4.2.3 with mGBA and Gambatte. Open-source code and third-party licenses are included; game ROMs are not.</p></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div><script src="player.js"></script></body></html>
