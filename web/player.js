@@ -23,9 +23,9 @@ function selectGame(index) {
   const game=library[selected], theme=themes[game.theme];
   $('#featured').dataset.theme=game.theme;
   $('#gameTitle').textContent=game.title;
-  $('#series').textContent=game.theme==='homebrew'?'Independent games':'Pokémon';
-  $('#platform').textContent=game.system==='gba'?'GAME BOY ADVANCE':'GAME BOY / GAME BOY COLOR';
-  $('#description').textContent=theme.description;
+  $('#series').textContent=game.system==='nds'?'Nintendo DS':game.theme==='homebrew'?'Independent games':'Pokémon';
+  $('#platform').textContent=game.system==='nds'?'NINTENDO DS':game.system==='gba'?'GAME BOY ADVANCE':'GAME BOY / GAME BOY COLOR';
+  $('#description').textContent=game.system==='nds'?'A dual-screen adventure from an independent creator. Tap the lower screen to control it.':theme.description;
   $('#edition').textContent=theme.edition;
   $('#heroImage').src=game.theme==='homebrew'?'icon.svg':`assets/${game.theme}.svg`;
   $('#heroImage').alt=theme.alt;
@@ -39,8 +39,11 @@ async function refreshLibrary() {
   const response=await fetch('/api/library');if(!response.ok)throw Error('Could not read the drive.');
   const data=await response.json();
   library=data.games.sort((a,b)=>['firered','emerald','leafgreen','homebrew'].indexOf(a.theme)-['firered','emerald','leafgreen','homebrew'].indexOf(b.theme));
+  // The app's library is the ROMs bundled in it; which of them have a saved session lives in the
+  // shell-mirrored store, not in the JSON.
+  if(savesToApp()){const stored=new Set(await nativeSaves.keys());library.forEach(game=>{game.saved=stored.has(game.id);});}
   $('#gameCount').textContent=`${library.length} game${library.length===1?'':'s'} installed`;
-  $('#driveStatus').textContent=`Drive connected · ${mb(data.free)} free`;
+  $('#driveStatus').textContent=`${savesToApp()?'On this iPhone':'Drive connected'} · ${mb(data.free)} free`;
   $('#driveMeter').style.width=`${100-data.free/data.total*100}%`;
   $('#phoneLink').href=data.phoneURL;$('#phoneLink').textContent=data.phoneURL;
   $('#games').replaceChildren();
@@ -49,7 +52,7 @@ async function refreshLibrary() {
     if(game.theme!=='homebrew'){const img=document.createElement('img');img.src=`assets/${game.theme}.svg`;img.alt='';b.append(img);}
     else {const icon=document.createElement('span');icon.className='generic-art';icon.textContent=game.system.toUpperCase();b.append(icon);}
     const text=document.createElement('span');text.className='card-text';
-    for(const [tag,content,cls] of [['small',game.theme==='homebrew'?'HOMEBREW':'POKÉMON',''],['strong',game.title,''],['small',game.system==='gba'?'Game Boy Advance':'Game Boy','card-system']]){const el=document.createElement(tag);el.textContent=content;el.className=cls;text.append(el);}
+    for(const [tag,content,cls] of [['small',game.theme==='homebrew'?'HOMEBREW':'POKÉMON',''],['strong',game.title,''],['small',game.system==='nds'?'Nintendo DS':game.system==='gba'?'Game Boy Advance':'Game Boy','card-system']]){const el=document.createElement(tag);el.textContent=content;el.className=cls;text.append(el);}
     const check=document.createElement('span');check.className='check';check.textContent='✓';check.setAttribute('aria-hidden','true');b.append(text,check);b.onclick=()=>selectGame(i);$('#games').append(b);
   });
   selectGame(Math.min(selected,library.length-1));
@@ -61,8 +64,8 @@ async function importFiles(files) {
   for(const file of files){
     $('#importStatus').textContent=`Copying ${file.name} to your drive…`;
     try {
-      if(!/\.(gba|gb|gbc)$/i.test(file.name))throw Error('Unzip the download and choose a .gba, .gb, or .gbc file.');
-      if(file.size>32*1048576)throw Error('Games must be 32 MB or smaller.');
+      if(!/\.(gba|gb|gbc|nds)$/i.test(file.name))throw Error('Unzip the download and choose a .gba, .gb, .gbc, or .nds file.');
+      if(file.size>64*1048576)throw Error('Games must be 64 MB or smaller.');
       const r=await fetch('/api/import',{method:'POST',headers:{'X-Filename':encodeURIComponent(file.name)},body:file});
       const result=await r.json();if(!r.ok)throw Error(result.error);added++;
     }catch(e){failures.push(`${file.name}: ${e.message}`);}
@@ -78,11 +81,14 @@ async function saveSession(quiet=false) {
   saving=(async()=>{
     try{
       const state=window.EJS_emulator.gameManager.getState();
-      const r=await fetch(`/api/save/${playing.id}`,{method:'POST',body:state});
-      if(!r.ok)throw Error((await r.json()).error);
-      $('#playStatus').textContent=`Saved to drive · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
-      if(!quiet)toast('Session saved to your drive.');return true;
-    }catch(e){$('#playStatus').textContent=`Save failed: ${e.message}`;if(!quiet)toast('Could not save. Keep the drive connected and try again.');return false;}
+      if(savesToApp())await nativeSaves.put(playing.id,state);
+      else{
+        const r=await fetch(`/api/save/${playing.id}`,{method:'POST',body:state});
+        if(!r.ok)throw Error((await r.json()).error);
+      }
+      $('#playStatus').textContent=`Saved to ${savesLabel()} · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+      if(!quiet)toast(`Session saved to ${savesLabel()}.`);return true;
+    }catch(e){$('#playStatus').textContent=`Save failed: ${e.message}`;if(!quiet)toast(`Could not save to ${savesLabel()}. Try again.`);return false;}
     finally{saving=null;}
   })();return saving;
 }
@@ -125,18 +131,48 @@ controllerButtons.forEach(button=>{
   });
   button.addEventListener('contextmenu',event=>event.preventDefault());
 });
-const keyboardControls={ArrowUp:4,ArrowDown:5,ArrowLeft:6,ArrowRight:7,KeyX:8,KeyZ:0,Enter:3,ShiftLeft:2,ShiftRight:2,KeyA:10,KeyS:11};
-window.addEventListener('keydown',event=>{if(event.target.closest?.('.control'))return;const input=keyboardControls[event.code];if(input===undefined||event.repeat)return;const button=controllerButtons.find(item=>Number(item.dataset.input)===input);if(button)setControllerVisual(button,true);});
-window.addEventListener('keyup',event=>{if(event.target.closest?.('.control'))return;const input=keyboardControls[event.code];if(input===undefined)return;const button=controllerButtons.find(item=>Number(item.dataset.input)===input);if(button)setControllerVisual(button,false);});
+const baseKeyboardControls={ArrowUp:4,ArrowDown:5,ArrowLeft:6,ArrowRight:7,KeyX:8,KeyZ:0,Enter:3,ShiftLeft:2,ShiftRight:2,KeyA:10,KeyS:11};
+const keyboardControls=()=>playing?.system==='nds'?{...baseKeyboardControls,KeyC:9,KeyD:1}:baseKeyboardControls;
+window.addEventListener('keydown',event=>{if(event.target.closest?.('.control'))return;const input=keyboardControls()[event.code];if(input===undefined||event.repeat)return;const button=controllerButtons.find(item=>Number(item.dataset.input)===input);if(button)setControllerVisual(button,true);});
+window.addEventListener('keyup',event=>{if(event.target.closest?.('.control'))return;const input=keyboardControls()[event.code];if(input===undefined)return;const button=controllerButtons.find(item=>Number(item.dataset.input)===input);if(button)setControllerVisual(button,false);});
 $('#backButton').onclick=async()=>{
   $('#backButton').disabled=true;
-  if(started && !await saveSession(true)){$('#backButton').disabled=false;toast('Save failed. Please reconnect your drive before leaving.');return;}
+  if(started && !await saveSession(true)){$('#backButton').disabled=false;toast(`Save failed. Try again before leaving.`);return;}
   clearInterval(saveTimer);started=false;location.reload();
 };
-$('#playButton').onclick=()=>{
+/**
+ * Where a session lives.
+ *
+ * On the drive the player talks to the local server: POST and GET `/api/save/<id>`. Inside the
+ * iOS app there is no server, so the shell sets `window.PocketFieldNative` and the same sessions
+ * go to an IndexedDB store instead — a store the shell mirrors to a native file, so a state
+ * survives the app being closed the way a drive state survives the drive being ejected.
+ */
+const savesToApp=()=>window.PocketFieldNative===true;
+const nativeSaves=(()=>{
+  const DB='pocketfield-saves',STORE='state';let opening=null;
+  const open=()=>opening??=(opening=new Promise((resolve,reject)=>{
+    const request=indexedDB.open(DB,1);
+    request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(STORE))request.result.createObjectStore(STORE);};
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error);
+  }));
+  const run=async(mode,work)=>{const db=await open();return new Promise((resolve,reject)=>{
+    const transaction=db.transaction(STORE,mode);const request=work(transaction.objectStore(STORE));
+    transaction.oncomplete=()=>resolve(request?request.result:undefined);
+    transaction.onerror=()=>reject(transaction.error);
+  });};
+  return {
+    put:(id,state)=>run('readwrite',store=>store.put(state,id)),
+    get:id=>run('readonly',store=>store.get(id)),
+    keys:async()=>(await run('readonly',store=>store.getAllKeys()))||[],
+  };
+})();
+const savesLabel=()=>savesToApp()?'this iPhone':'your drive';
+$('#playButton').onclick=async()=>{
   if(playing||!library[selected])return;
   playing=library[selected];const theme=themes[playing.theme];
-  $('#library').hidden=true;$('header').hidden=true;$('#playScreen').hidden=false;$('#playingTitle').textContent=`${playing.theme==='homebrew'?'':'Pokémon '}${playing.title}`;
+  $('#library').hidden=true;$('header').hidden=true;$('#playScreen').hidden=false;document.querySelector('.console').classList.toggle('is-nds',playing.system==='nds');$('#playingTitle').textContent=`${playing.theme==='homebrew'?'':'Pokémon '}${playing.title}`;
   $('#playStatus').textContent='Starting your game…';
   window.EJS_player='#game';window.EJS_core=playing.system;window.EJS_gameUrl=`/api/rom/${playing.id}`;
   window.EJS_gameName=playing.filename;window.EJS_gameID=parseInt(playing.id.slice(0,10),16);
@@ -144,8 +180,11 @@ $('#playButton').onclick=()=>{
   window.EJS_language='en-US';window.EJS_disableAutoLang=false;window.EJS_threads=false;window.EJS_volume=.5;
   window.EJS_defaultOptions={'ejs_threads':'disabled'};
   window.EJS_Buttons={saveState:false,loadState:false,saveSav:true,loadSav:true};
-  if(playing.saved)window.EJS_loadStateURL=`/api/save/${playing.id}`;
-  window.EJS_onGameStart=()=>{started=true;$('#saveButton').disabled=false;$('#playStatus').textContent='Have fun. Sessions save to your drive every 20 seconds.';saveTimer=setInterval(()=>saveSession(true),20000);};
+  if(playing.saved){
+    const savedState=savesToApp()?await nativeSaves.get(playing.id):null;
+    window.EJS_loadStateURL=savesToApp()?(savedState?URL.createObjectURL(savedState):null):`/api/save/${playing.id}`;
+  }
+  window.EJS_onGameStart=()=>{started=true;$('#saveButton').disabled=false;$('#playStatus').textContent=`Have fun. Sessions save to ${savesLabel()} every 20 seconds.`;saveTimer=setInterval(()=>saveSession(true),20000);};
   const loader=document.createElement('script');loader.src='/emulator/loader.js';loader.onerror=()=>$('#playStatus').textContent='The emulator files could not be read. Check the drive.';document.body.append(loader);
 };
 window.addEventListener('keydown',e=>{if(playing||document.querySelector('dialog[open]')||['INPUT','BUTTON','A'].includes(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();selectGame(selected+1);}if(e.key==='ArrowLeft'){e.preventDefault();selectGame(selected-1);}if(e.key==='Enter')$('#playButton').click();});
@@ -153,4 +192,4 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&started)sa
 window.addEventListener('beforeunload',e=>{if(started){e.preventDefault();e.returnValue='Save your session before leaving.';}});
 // Remove the earlier shell-only cache: the complete runtime now lives on the drive.
 if('serviceWorker' in navigator)navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));
-refreshLibrary().catch(e=>{$('#driveStatus').textContent='Drive unavailable';$('#description').textContent='Open Pocket Field.app from your connected drive.';toast(e.message);});
+refreshLibrary().catch(e=>{$('#driveStatus').textContent=savesToApp()?'Library unavailable':'Drive unavailable';$('#description').textContent=savesToApp()?'The bundled games could not be read.':'Open Pocket Field.app from your connected drive.';toast(e.message);});

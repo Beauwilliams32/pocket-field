@@ -27,7 +27,7 @@ func localIP() -> String {
     return "127.0.0.1"
 }
 func gameFiles() -> [URL] {
-    ((try? fm.contentsOfDirectory(at: gamesDir, includingPropertiesForKeys: nil)) ?? []).filter { ["gba", "gb", "gbc"].contains($0.pathExtension.lowercased()) && !$0.lastPathComponent.hasPrefix(".") }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    ((try? fm.contentsOfDirectory(at: gamesDir, includingPropertiesForKeys: nil)) ?? []).filter { ["gba", "gb", "gbc", "nds"].contains($0.pathExtension.lowercased()) && !$0.lastPathComponent.hasPrefix(".") }.sorted { $0.lastPathComponent < $1.lastPathComponent }
 }
 func gameID(_ file: URL) -> String { SHA256.hash(data: Data(file.lastPathComponent.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined() }
 func gameInfo(_ file: URL) -> [String: Any] {
@@ -40,7 +40,7 @@ func gameInfo(_ file: URL) -> [String: Any] {
     let theme = themes[code] ?? "homebrew"
     let titles = ["firered": "FireRed", "emerald": "Emerald", "leafgreen": "LeafGreen"]
     let state = savesDir.appendingPathComponent(id + ".state")
-    return ["id": id, "title": titles[theme] ?? file.deletingPathExtension().lastPathComponent, "theme": theme, "filename": file.lastPathComponent, "system": file.pathExtension.lowercased() == "gba" ? "gba" : "gb", "bytes": (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0, "saved": fm.fileExists(atPath: state.path), "savedAt": ((try? fm.attributesOfItem(atPath: state.path)[.modificationDate]) as? Date)?.timeIntervalSince1970 ?? 0]
+    return ["id": id, "title": titles[theme] ?? file.deletingPathExtension().lastPathComponent, "theme": theme, "filename": file.lastPathComponent, "system": ["gba": "gba", "gb": "gb", "gbc": "gb", "nds": "nds"][file.pathExtension.lowercased()] ?? "gb", "bytes": (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0, "saved": fm.fileExists(atPath: state.path), "savedAt": ((try? fm.attributesOfItem(atPath: state.path)[.modificationDate]) as? Date)?.timeIntervalSince1970 ?? 0]
 }
 func json(_ obj: Any) -> Data { (try? JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])) ?? Data("{}".utf8) }
 func reply(_ fd: Int32, _ code: Int, _ data: Data, _ mime: String = "application/json", headOnly: Bool = false) {
@@ -84,7 +84,7 @@ func serve(_ fd: Int32) {
         guard headers["origin"] == "http://\(host)" else { error(fd,403,"Open Pocket Field to make changes"); return }
     }
     let length = Int(headers["content-length"] ?? "0") ?? -1
-    guard length >= 0 && length <= 34 * 1024 * 1024 else { error(fd,413,"Choose a ROM smaller than 32 MB"); return }
+    guard length >= 0 && length <= 70 * 1024 * 1024 else { error(fd,413,"Choose a ROM smaller than 64 MB"); return }
     var body = Data(buffer[end...])
     while body.count < length { let n = recv(fd, &bytes, bytes.count, 0); if n <= 0 { return }; body.append(contentsOf: bytes.prefix(n)) }
     guard body.count == length else { error(fd,400,"Invalid request length"); return }
@@ -99,7 +99,7 @@ func serve(_ fd: Int32) {
     if path == "/api/import" && method == "POST" {
         let name = (headers["x-filename"]?.removingPercentEncoding ?? "").replacingOccurrences(of: "\\", with: "/")
         let file = URL(fileURLWithPath: name).lastPathComponent
-        guard file == name, !file.hasPrefix("."), file.utf8.count < 180, ["gba","gb","gbc"].contains(URL(fileURLWithPath:file).pathExtension.lowercased()), body.count >= 256, body.count <= 32 * 1024 * 1024 else { error(fd,400,"Choose an extracted .gba, .gb, or .gbc game (up to 32 MB)"); return }
+        guard file == name, !file.hasPrefix("."), file.utf8.count < 180, ["gba","gb","gbc","nds"].contains(URL(fileURLWithPath:file).pathExtension.lowercased()), body.count >= 256, body.count <= 64 * 1024 * 1024 else { error(fd,400,"Choose an extracted .gba, .gb, .gbc, or .nds game (up to 64 MB)"); return }
         ioLock.lock(); defer { ioLock.unlock() }
         let destination = gamesDir.appendingPathComponent(file)
         guard !fm.fileExists(atPath: destination.path) else { error(fd,409,"This filename is already installed"); return }
@@ -113,7 +113,7 @@ func serve(_ fd: Int32) {
         let file = prefix == "/api/rom/" ? game : savesDir.appendingPathComponent(id + ".state")
         if method == "GET" || method == "HEAD" { if let data = try? Data(contentsOf:file) { reply(fd,200,data,"application/octet-stream",headOnly:method == "HEAD") } else { error(fd,404,"No saved session yet") }; return }
         if method == "POST" && prefix == "/api/save/" {
-            guard body.count > 0 && body.count < 2 * 1024 * 1024 else { error(fd,413,"Invalid save size"); return }
+            guard body.count > 0 && body.count <= 40 * 1024 * 1024 else { error(fd,413,"Invalid save size"); return }
             ioLock.lock(); defer { ioLock.unlock() }
             do {
                 if let old = try? Data(contentsOf:file) { try old.write(to:savesDir.appendingPathComponent(id + ".previous.state"),options:.atomic) }

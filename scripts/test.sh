@@ -10,7 +10,7 @@ for p in root.rglob('*'):
     if p.is_file() and p.suffix.lower() in {'.gba','.gb','.gbc','.sav','.state'}:
         raise SystemExit(f'Private game/save file must not be published: {p}')
 html=(root/'web/index.html').read_text()
-expected={'L shoulder button':10,'R shoulder button':11,'Up':4,'Down':5,'Left':6,'Right':7,'B button':0,'A button':8,'Select':2,'Start':3}
+expected={'L shoulder button':10,'R shoulder button':11,'Up':4,'Down':5,'Left':6,'Right':7,'B button':0,'A button':8,'Select':2,'Start':3,'X button':9,'Y button':1}
 found={label:int(value) for value,label in re.findall(r'data-input="(\d+)"[^>]*aria-label="([^"]+)"',html)}
 assert found==expected,(found,expected)
 js=(root/'web/player.js').read_text()

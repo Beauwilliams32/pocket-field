@@ -3,6 +3,7 @@
 - EmulatorJS 4.2.3: https://github.com/EmulatorJS/EmulatorJS/tree/v4.2.3, GPL-3.0, full license in `web/emulator/LICENSE`.
 - mGBA: https://github.com/mgba-emu/mgba, MPL-2.0. EmulatorJS WebAssembly build, binary in `web/emulator/cores/`.
 - Gambatte libretro: https://github.com/libretro/gambatte-libretro, GPL-2.0. EmulatorJS WebAssembly build, binary in `web/emulator/cores/`.
+- melonDS: https://github.com/melonDS-emu/melonDS, GPL-3.0. EmulatorJS WebAssembly build, the Nintendo DS core, binary in `web/emulator/cores/`.
 - Pocket Field cartridge illustrations are original project assets licensed under GPL-3.0 with the rest of Pocket Field.
 - Taste design guidance: https://github.com/Leonxlnx/taste-skill, MIT. Guidance only; no skill runtime code bundled.
 
