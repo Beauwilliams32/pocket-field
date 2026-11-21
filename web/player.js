@@ -167,20 +167,36 @@ $('#backButton').onclick=async()=>{
 const savesToApp=()=>window.PocketFieldNative===true;
 const nativeSaves=(()=>{
   const DB='pocketfield-saves',STORE='state';let opening=null;
-  const open=()=>{if(!opening){opening=new Promise((resolve,reject)=>{
-    let settled=false;
-    const timeout=setTimeout(()=>finish(Error('Save library open timed out')),8000);
+  const open=()=>{if(!opening){let pending;pending=new Promise((resolve,reject)=>{
+    let settled=false,terminal=false,blocked=false;
+    const timeout=setTimeout(()=>{
+      if(settled)return;
+      settled=true;
+      reject(Error(blocked?'Save library open is blocked; retry after other app views close.':'Save library open timed out'));
+      // IndexedDBOpenDBRequest cannot be cancelled. Keep this rejected promise
+      // cached until the old request reaches a terminal event, so a retry never
+      // races it with another schema-open request.
+    },8000);
     const finish=(error,value)=>{
-      if(settled){if(!error)value?.close?.();return;}
-      settled=true;clearTimeout(timeout);
-      if(error)reject(error);else resolve(value);
+      if(terminal){if(value)value.close?.();return;}
+      terminal=true;clearTimeout(timeout);
+      if(settled){if(value)value.close?.();if(opening===pending)opening=null;return;}
+      settled=true;
+      if(error){reject(error);if(opening===pending)opening=null;}else resolve(value);
     };
     const request=indexedDB.open(DB,1);
-    request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(STORE))request.result.createObjectStore(STORE);};
+    request.onupgradeneeded=()=>{
+      if(settled){request.transaction?.abort();return;}
+      if(!request.result.objectStoreNames.contains(STORE))request.result.createObjectStore(STORE);
+    };
     request.onsuccess=()=>finish(null,request.result);
     request.onerror=()=>finish(request.error||Error('Save library could not be opened'));
-    request.onblocked=()=>finish(Error('Save library open was blocked'));
-  });opening.catch(()=>{opening=null;});}return opening;};
+    request.onblocked=()=>{blocked=true;};
+  });opening=pending;
+  // A timed-out, still-pending request remains cached; only its eventual
+  // terminal handler clears it and makes a later user retry create a new open.
+  opening.catch(()=>{});
+  }return opening;};
   const run=async(mode,work)=>{const db=await open();return new Promise((resolve,reject)=>{
     const transaction=db.transaction(STORE,mode);const request=work(transaction.objectStore(STORE));
     transaction.oncomplete=()=>resolve(request?request.result:undefined);
