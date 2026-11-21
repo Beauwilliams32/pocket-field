@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 node --check "$ROOT/web/player.js"
+node --test "$ROOT/test/"*.test.mjs
 plutil -lint "$ROOT/app/Info.plist"
 python3 - "$ROOT" <<'PY'
 import pathlib,re,sys
