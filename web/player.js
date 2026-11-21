@@ -63,7 +63,11 @@ async function refreshLibrary() {
   }finally{libraryLoading=false;}
 }
 function libraryFailure(e){
-  if(savesToApp())libraryReady=false;
+  if(savesToApp()){
+    libraryReady=false;library=[];selected=0;$('#games').replaceChildren();
+    $('#gameTitle').textContent='';
+    $('#gameCount').textContent='Library unavailable';
+  }
   $('#driveStatus').textContent=savesToApp()?'Library unavailable':'Drive unavailable';
   $('#description').textContent=savesToApp()?'Your saved sessions could not be checked. Try again before playing.':'Open Pocket Field.app from your connected drive.';
   if(savesToApp()){$('#playButton span').textContent='Retry library';$('#saveNote').textContent='Could not verify saved sessions. Try again.';$('#playButton').disabled=false;}
@@ -166,7 +170,8 @@ $('#backButton').onclick=async()=>{
  */
 const savesToApp=()=>window.PocketFieldNative===true;
 const nativeSaves=(()=>{
-  const DB='pocketfield-saves',STORE='state';let opening=null;
+  const DB='pocketfield-saves',STORE='state';let opening=null,database=null;
+  const invalidate=db=>{if(database!==db)return;database=null;opening=null;};
   const open=()=>{if(!opening){let pending;pending=new Promise((resolve,reject)=>{
     let settled=false,terminal=false,blocked=false;
     const timeout=setTimeout(()=>{
@@ -182,7 +187,14 @@ const nativeSaves=(()=>{
       terminal=true;clearTimeout(timeout);
       if(settled){if(value)value.close?.();if(opening===pending)opening=null;return;}
       settled=true;
-      if(error){reject(error);if(opening===pending)opening=null;}else resolve(value);
+      if(error){reject(error);if(opening===pending)opening=null;}
+      else{
+        database=value;
+        const close=()=>invalidate(value);
+        value.addEventListener?.('versionchange',()=>{value.close?.();close();},{once:true});
+        value.addEventListener?.('close',close,{once:true});
+        resolve(value);
+      }
     };
     const request=indexedDB.open(DB,1);
     request.onupgradeneeded=()=>{
@@ -198,7 +210,9 @@ const nativeSaves=(()=>{
   opening.catch(()=>{});
   }return opening;};
   const run=async(mode,work)=>{const db=await open();return new Promise((resolve,reject)=>{
-    const transaction=db.transaction(STORE,mode);const request=work(transaction.objectStore(STORE));
+    let transaction;
+    try{transaction=db.transaction(STORE,mode);}catch(error){invalidate(db);reject(error);return;}
+    const request=work(transaction.objectStore(STORE));
     transaction.oncomplete=()=>resolve(request?request.result:undefined);
     transaction.onerror=()=>reject(transaction.error);
     transaction.onabort=()=>reject(transaction.error ?? Error('Save transaction aborted'));
