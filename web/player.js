@@ -5,7 +5,7 @@ const themes = {
   leafgreen:{alt:'Leaf-green handheld game cartridge',description:'A classic handheld adventure with offline saves.',edition:'LEAF / 03',color:'#65852b'},
   homebrew:{alt:'Game cartridge',description:'A new world from an independent creator. Your next discovery is ready to play.',edition:'NEW ADVENTURES',color:'#377794'}
 };
-let library = [], selected = 0, playing = null, started = false, saveTimer, saving = null;
+let library = [], selected = 0, playing = null, launching = false, libraryReady = false, libraryLoading = false, started = false, saveTimer, saving = null, restoredSaveProtected = false;
 const mb = n => `${Math.round(n / 1048576)} MB`;
 function toast(message) { $('#toast').textContent=message; $('#toast').hidden=false; clearTimeout(toast.timer); toast.timer=setTimeout(()=>$('#toast').hidden=true,4500); }
 function openDialog(id) { $(id).showModal(); }
@@ -18,7 +18,7 @@ $('#helpButton').onclick=()=>openDialog('#helpDialog');
 $('#playerHelpButton').onclick=()=>openDialog('#helpDialog');
 $('#importButton').onclick=()=>$('#romFile').click();
 function selectGame(index) {
-  if(!library.length)return;
+  if(!library.length||(savesToApp()&&!libraryReady))return;
   selected=(index+library.length)%library.length;
   const game=library[selected], theme=themes[game.theme];
   $('#featured').dataset.theme=game.theme;
@@ -36,12 +36,15 @@ function selectGame(index) {
   document.querySelectorAll('.game-card').forEach((b,i)=>b.setAttribute('aria-pressed',String(i===selected)));
 }
 async function refreshLibrary() {
+  if(savesToApp()){libraryReady=false;libraryLoading=true;$('#playButton').disabled=true;}
+  try{
   const response=await fetch('/api/library');if(!response.ok)throw Error('Could not read the drive.');
   const data=await response.json();
-  library=data.games.sort((a,b)=>['firered','emerald','leafgreen','homebrew'].indexOf(a.theme)-['firered','emerald','leafgreen','homebrew'].indexOf(b.theme));
+  const games=data.games.sort((a,b)=>['firered','emerald','leafgreen','homebrew'].indexOf(a.theme)-['firered','emerald','leafgreen','homebrew'].indexOf(b.theme));
   // The app's library is the ROMs bundled in it; which of them have a saved session lives in the
   // shell-mirrored store, not in the JSON.
-  if(savesToApp()){const stored=new Set(await nativeSaves.keys());library.forEach(game=>{game.saved=stored.has(game.id);});}
+  if(savesToApp()){const stored=new Set(await nativeSaves.keys());games.forEach(game=>{game.saved=stored.has(game.id);});}
+  library=games;libraryReady=true;
   $('#gameCount').textContent=`${library.length} game${library.length===1?'':'s'} installed`;
   $('#driveStatus').textContent=`${savesToApp()?'On this iPhone':'Drive connected'} · ${mb(data.free)} free`;
   $('#driveMeter').style.width=`${100-data.free/data.total*100}%`;
@@ -57,6 +60,14 @@ async function refreshLibrary() {
   });
   selectGame(Math.min(selected,library.length-1));
   if(!library.length){$('#description').textContent='Your collection starts here. Add a game to get playing.';$('#playButton').disabled=true;}
+  }finally{libraryLoading=false;}
+}
+function libraryFailure(e){
+  if(savesToApp())libraryReady=false;
+  $('#driveStatus').textContent=savesToApp()?'Library unavailable':'Drive unavailable';
+  $('#description').textContent=savesToApp()?'Your saved sessions could not be checked. Try again before playing.':'Open Pocket Field.app from your connected drive.';
+  if(savesToApp()){$('#playButton span').textContent='Retry library';$('#saveNote').textContent='Could not verify saved sessions. Try again.';$('#playButton').disabled=false;}
+  toast(e?.message||'Could not read the library.');
 }
 async function importFiles(files) {
   $('#importButton').disabled=true;
@@ -71,12 +82,15 @@ async function importFiles(files) {
     }catch(e){failures.push(`${file.name}: ${e.message}`);}
   }
   $('#importStatus').textContent=[added?`${added} game${added===1?'':'s'} added. Ready to play.`:'',...failures].join(' ');
-  $('#importButton').disabled=false;$('#romFile').value='';await refreshLibrary();
+  $('#importButton').disabled=false;$('#romFile').value='';await refreshLibrary().catch(libraryFailure);
 }
 $('#romFile').onchange=e=>importFiles([...e.target.files]);
 const drop=$('#dropZone');drop.ondragover=e=>{e.preventDefault();drop.classList.add('drag');};drop.ondragleave=()=>drop.classList.remove('drag');drop.ondrop=e=>{e.preventDefault();drop.classList.remove('drag');importFiles([...e.dataTransfer.files]);};
 async function saveSession(quiet=false) {
   if(!started)return false;
+  // EmulatorJS does not report whether its deferred startup restore succeeded.
+  // Never replace the existing iPhone session with an unverified state.
+  if(restoredSaveProtected){if(!quiet)toast('Session saving is disabled. Progress will be lost when you leave.');return false;}
   if(saving)return saving;
   saving=(async()=>{
     try{
@@ -137,7 +151,9 @@ window.addEventListener('keydown',event=>{if(event.target.closest?.('.control'))
 window.addEventListener('keyup',event=>{if(event.target.closest?.('.control'))return;const input=keyboardControls()[event.code];if(input===undefined)return;const button=controllerButtons.find(item=>Number(item.dataset.input)===input);if(button)setControllerVisual(button,false);});
 $('#backButton').onclick=async()=>{
   $('#backButton').disabled=true;
-  if(started && !await saveSession(true)){$('#backButton').disabled=false;toast(`Save failed. Try again before leaving.`);return;}
+  if(started && restoredSaveProtected){
+    if(!window.confirm('Session saving is disabled. Progress from this session will be lost when you leave. Leave anyway?')){$('#backButton').disabled=false;return;}
+  }else if(started && !await saveSession(true)){$('#backButton').disabled=false;toast(`Save failed. Try again before leaving.`);return;}
   clearInterval(saveTimer);started=false;location.reload();
 };
 /**
@@ -151,16 +167,25 @@ $('#backButton').onclick=async()=>{
 const savesToApp=()=>window.PocketFieldNative===true;
 const nativeSaves=(()=>{
   const DB='pocketfield-saves',STORE='state';let opening=null;
-  const open=()=>opening??=(opening=new Promise((resolve,reject)=>{
+  const open=()=>{if(!opening){opening=new Promise((resolve,reject)=>{
+    let settled=false;
+    const timeout=setTimeout(()=>finish(Error('Save library open timed out')),8000);
+    const finish=(error,value)=>{
+      if(settled){if(!error)value?.close?.();return;}
+      settled=true;clearTimeout(timeout);
+      if(error)reject(error);else resolve(value);
+    };
     const request=indexedDB.open(DB,1);
     request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(STORE))request.result.createObjectStore(STORE);};
-    request.onsuccess=()=>resolve(request.result);
-    request.onerror=()=>reject(request.error);
-  }));
+    request.onsuccess=()=>finish(null,request.result);
+    request.onerror=()=>finish(request.error||Error('Save library could not be opened'));
+    request.onblocked=()=>finish(Error('Save library open was blocked'));
+  });opening.catch(()=>{opening=null;});}return opening;};
   const run=async(mode,work)=>{const db=await open();return new Promise((resolve,reject)=>{
     const transaction=db.transaction(STORE,mode);const request=work(transaction.objectStore(STORE));
     transaction.oncomplete=()=>resolve(request?request.result:undefined);
     transaction.onerror=()=>reject(transaction.error);
+    transaction.onabort=()=>reject(transaction.error ?? Error('Save transaction aborted'));
   });};
   return {
     put:(id,state)=>run('readwrite',store=>store.put(state,id)),
@@ -170,9 +195,48 @@ const nativeSaves=(()=>{
 })();
 const savesLabel=()=>savesToApp()?'this iPhone':'your drive';
 $('#playButton').onclick=async()=>{
-  if(playing||!library[selected])return;
-  playing=library[selected];const theme=themes[playing.theme];
+  if(playing||launching)return;
+  if(savesToApp()&&!libraryReady){if(!libraryLoading)refreshLibrary().catch(libraryFailure);return;}
+  if(!library[selected])return;
+  const game=library[selected];let savedStateURL=null;
+  // Read the existing iPhone session before opening the player. If it cannot be
+  // read, never start a fresh game that could overwrite it on the next autosave.
+  if(savesToApp()&&game.saved){
+    launching=true;$('#playButton').disabled=true;
+    try{
+      const savedState=await nativeSaves.get(game.id);
+      if(!(savedState instanceof Blob || savedState instanceof ArrayBuffer || ArrayBuffer.isView(savedState)))
+        throw Error('Saved session unavailable');
+      // EmulatorJS returns Uint8Array, which must be wrapped in a Blob before
+      // createObjectURL can expose it to the loader.
+      const blob=savedState instanceof Blob?savedState:new Blob([savedState],{type:'application/octet-stream'});
+      if(!blob.size)throw Error('Saved session is empty');
+      savedStateURL=URL.createObjectURL(blob);
+    }catch{
+      if(library[selected]===game){
+        $('#saveNote').textContent='Could not read your saved session. No player save was written. Tap Continue to retry.';
+        toast('Could not read your saved session. Try again.');
+      }
+      return;
+    }finally{launching=false;$('#playButton').disabled=false;}
+    // The selection may have changed while the read was pending.
+    if(library[selected]!==game){URL.revokeObjectURL(savedStateURL);return;}
+    // Restoring cannot currently be confirmed by EmulatorJS. Ask before a
+    // player invests time in a session whose progress cannot be saved.
+    if(!window.confirm('Session saving is disabled for this resumed game. Progress will be lost when you leave. Continue playing?')){
+      URL.revokeObjectURL(savedStateURL);
+      return;
+    }
+  }
+  playing=game;restoredSaveProtected=savesToApp()&&game.saved;const theme=themes[playing.theme];
   $('#library').hidden=true;$('header').hidden=true;$('#playScreen').hidden=false;document.querySelector('.console').classList.toggle('is-nds',playing.system==='nds');$('#playingTitle').textContent=`${playing.theme==='homebrew'?'':'Pokémon '}${playing.title}`;
+  if(restoredSaveProtected){
+    const notice=document.createElement('div');
+    notice.className='save-protection-notice';
+    notice.setAttribute('role','status');
+    notice.textContent='Session saving is disabled. Progress in this resumed game will be lost when you leave.';
+    document.querySelector('.player-toolbar').after(notice);
+  }
   $('#playStatus').textContent='Starting your game…';
   window.EJS_player='#game';window.EJS_core=playing.system;window.EJS_gameUrl=`/api/rom/${playing.id}`;
   window.EJS_gameName=playing.filename;window.EJS_gameID=parseInt(playing.id.slice(0,10),16);
@@ -181,15 +245,16 @@ $('#playButton').onclick=async()=>{
   window.EJS_defaultOptions={'ejs_threads':'disabled'};
   window.EJS_Buttons={saveState:false,loadState:false,saveSav:true,loadSav:true};
   if(playing.saved){
-    const savedState=savesToApp()?await nativeSaves.get(playing.id):null;
-    window.EJS_loadStateURL=savesToApp()?(savedState?URL.createObjectURL(savedState):null):`/api/save/${playing.id}`;
+    window.EJS_loadStateURL=savesToApp()?savedStateURL:`/api/save/${playing.id}`;
   }
-  window.EJS_onGameStart=()=>{started=true;$('#saveButton').disabled=false;$('#playStatus').textContent=`Have fun. Sessions save to ${savesLabel()} every 20 seconds.`;saveTimer=setInterval(()=>saveSession(true),20000);};
+  window.EJS_onGameStart=()=>{started=true;$('#saveButton').disabled=restoredSaveProtected;
+    if(restoredSaveProtected){$('#playStatus').textContent='Session saving is disabled. Progress will be lost when you leave.';}
+    else{$('#playStatus').textContent=`Have fun. Sessions save to ${savesLabel()} every 20 seconds.`;saveTimer=setInterval(()=>saveSession(true),20000);}};
   const loader=document.createElement('script');loader.src='/emulator/loader.js';loader.onerror=()=>$('#playStatus').textContent='The emulator files could not be read. Check the drive.';document.body.append(loader);
 };
 window.addEventListener('keydown',e=>{if(playing||document.querySelector('dialog[open]')||['INPUT','BUTTON','A'].includes(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();selectGame(selected+1);}if(e.key==='ArrowLeft'){e.preventDefault();selectGame(selected-1);}if(e.key==='Enter')$('#playButton').click();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&started)saveSession(true);});
-window.addEventListener('beforeunload',e=>{if(started){e.preventDefault();e.returnValue='Save your session before leaving.';}});
+window.addEventListener('beforeunload',e=>{if(started){e.preventDefault();e.returnValue=restoredSaveProtected?'Session saving is disabled. Progress will be lost when you leave.':'Save your session before leaving.';}});
 // Remove the earlier shell-only cache: the complete runtime now lives on the drive.
 if('serviceWorker' in navigator)navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));
-refreshLibrary().catch(e=>{$('#driveStatus').textContent=savesToApp()?'Library unavailable':'Drive unavailable';$('#description').textContent=savesToApp()?'The bundled games could not be read.':'Open Pocket Field.app from your connected drive.';toast(e.message);});
+refreshLibrary().catch(libraryFailure);
